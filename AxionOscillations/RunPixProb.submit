@@ -1,0 +1,31 @@
+######################################################
+# HTCondor Submit Description File for HEALPix Map
+# Parallel pixel processing using distributed computing
+######################################################
+if !defined FNAME
+ FNAME = Map_axion_conversion_Milky_Way
+endif
+ID   = $(Cluster).$(Process)
+
+output = $(FNAME).$(ID).out
+error  = $(FNAME).$(ID).err
+log = $(FNAME).$(ID).log
+
+requirements = ((OpSysAndVer == "Ubuntu22") && (Machine != "danza.ll.iac.es") && (Machine != "dante.ll.iac.es"))
+getenv = True
+universe = vanilla
+should_transfer_files  = YES
+when_to_transfer_output = ON_EXIT
+
+initialdir = /scratch/jtc/TMS/CondorOut
+
+transfer_executable = True
+executable = /scratch/jtc/TMS/CondorInputs/RunPixInt.sh
+
+arguments = 32 $(Process) 1E-11 1E-12 10.0 ne2001 0.1
+# NSIDE PIXELNUM COUPLING AXIONMASS FREQUENCY NE_MODEL DOMAIN_SIZE
+
+transfer_input_files = /scratch/jtc/TMS/CondorInputs/
+
+N = 12288
+queue $(N)
