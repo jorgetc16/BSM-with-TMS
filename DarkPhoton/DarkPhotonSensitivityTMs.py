@@ -1,7 +1,7 @@
 #%%
 import os, sys
-sys.path.append("/home/jortecal/GitHub/TMS/DarkPhoton/")
-sys.path.append("/home/jortecal/GitHub/TMS/DarkPhoton/notebooks/")
+sys.path.append("/home/jortecal/GitHub/TMS/DarkPhoton/CodeCaputo")
+sys.path.append("/home/jortecal/GitHub/TMS/DarkPhoton/CodeCaputo/notebooks/")
 
 import numpy as np
 import matplotlib.pyplot as plt

@@ -46,7 +46,7 @@ def P_gamma_to_alp(
     l,
     d_max_kpc=200.0,
     domain_size_kpc=0.5,
-    ne_model="constant"
+    ne_model="ne2001"
 ):
     rho = np.zeros((3, 3), dtype=np.complex128)
     rho[0, 0] = rho[1, 1] = 0.5

@@ -46,18 +46,35 @@ T_CMB_SI = 2.7255
 eV_to_GeV = 1e-9
 GeV_to_eV = 1e9
 
-def galactic_directions(n_directions=100):
+def galactic_directions(n_directions=100, avoid_poles=True, max_latitude=20):
     """
     Generate uniformly distributed directions across the sky.
     Returns (l, b) in degrees, where l is galactic longitude, b is latitude.
+    
+    Parameters:
+    -----------
+    n_directions : int
+        Number of directions to generate
+    avoid_poles : bool
+        If True, restrict to galactic plane region
+    max_latitude : float
+        Maximum |b| in degrees (only used if avoid_poles=True)
     """
-    # Uniform in cos(b) for uniform sky coverage
-    cos_b = np.random.uniform(-1, 1, n_directions)
-    b = np.degrees(np.arcsin(cos_b))
-    l = np.random.uniform(0, 360, n_directions)
+    if avoid_poles:
+        # Sample uniformly in galactic plane region where models are most reliable
+        # Uniform in sin(b) for uniform coverage
+        sin_b_max = np.sin(np.radians(max_latitude))
+        sin_b = np.random.uniform(-sin_b_max, sin_b_max, n_directions)
+        b = np.degrees(np.arcsin(sin_b))
+    else:
+        # Uniform over full sky
+        cos_b = np.random.uniform(-1, 1, n_directions)
+        b = np.degrees(np.arcsin(cos_b))
+    
+    l = np.random.uniform(0, 20, n_directions)
     return l, b
 
-def compute_mean_probability(g_agamma, m_a_GeV, nu_GeV, n_directions=100, domain_size_kpc=0.01, ne_model="ae200t"):
+def compute_mean_probability(g_agamma, m_a_GeV, nu_GeV, n_directions=100, domain_size_kpc=0.01, ne_model="ne2001"):
     """
     Compute mean conversion probability averaged over multiple sky directions.
     
@@ -74,7 +91,7 @@ def compute_mean_probability(g_agamma, m_a_GeV, nu_GeV, n_directions=100, domain
     domain_size_kpc : float
         Coherence domain size [kpc]
     ne_model : str
-        Electron density model
+        Electron density model ('ne2001', 'ymw16', etc.)
     
     Returns:
     --------
@@ -82,6 +99,7 @@ def compute_mean_probability(g_agamma, m_a_GeV, nu_GeV, n_directions=100, domain
     """
     l_array, b_array = galactic_directions(n_directions)
     probabilities = []
+    failed_count = 0
     
     for l, b in zip(l_array, b_array):
         try:
@@ -94,15 +112,29 @@ def compute_mean_probability(g_agamma, m_a_GeV, nu_GeV, n_directions=100, domain
                 domain_size_kpc=domain_size_kpc,
                 ne_model=ne_model
             )
-            if not np.isnan(P):
+            # Check for valid probability
+            if not np.isnan(P) and not np.isinf(P) and P >= 0:
                 probabilities.append(P)
-        except Exception:
+            else:
+                failed_count += 1
+        except (ValueError, RuntimeError, ZeroDivisionError) as e:
+            # Catch specific errors from pygedm or mixing calculations
+            failed_count += 1
+            continue
+        except Exception as e:
+            # Catch any other unexpected errors
+            failed_count += 1
             continue
     
     if len(probabilities) == 0:
+        print(f"Warning: All {n_directions} directions failed for m_a={m_a_GeV:.2e} GeV, nu={nu_GeV:.2e} GeV")
         return 0.0
     
+    if failed_count > 0.5 * n_directions:
+        print(f"Warning: {failed_count}/{n_directions} directions failed for m_a={m_a_GeV:.2e} GeV")
+    
     return np.mean(probabilities)
+
 
 def spectral_distortion(P_conversion, nu_hz):
     """
@@ -201,16 +233,21 @@ def main():
     print(f"TMS sensitivity ratio: {tms_sensitivity_ratio.min():.2e} – {tms_sensitivity_ratio.max():.2e}")
     
     # Axion mass range (eV)
-    m_a_eV_array = np.logspace(-16, -10, 50)  # 50 points for reasonable computation time
+    m_a_eV_array = np.logspace(-18, -10, 30)  # Reduced for testing
     
     # Fiducial coupling
     g_base = 1e-10  # GeV^-1
     
-    # Number of sky directions to average
-    n_directions = 3  # Increase for better statistics (slower)
+    # Number of sky directions - focus on galactic plane where models work best
+    n_directions = 2
     
-    print(f"\nComputing sensitivity for {len(m_a_eV_array)} mass points...")
+    # Try different models - ne2001 is usually most reliable
+    ne_model = "ne2001"  # Can also try "ymw16"
+    
+    print(f"\nUsing electron density model: {ne_model}")
+    print(f"Computing sensitivity for {len(m_a_eV_array)} mass points...")
     print(f"Averaging over {n_directions} sky directions per mass point")
+    print(f"Restricting to galactic plane (|b| < 20°) for model reliability\n")
     
     # Parallel computation
     n_cores = 6
@@ -232,7 +269,7 @@ def main():
         )
     
     # Filter out NaN and unphysical values
-    g_lim_array[g_lim_array > 1e-6] = np.nan  # Remove unphysically large couplings
+    g_lim_array[g_lim_array > 1e-4] = np.nan  # Remove unphysically large couplings
     
     valid_points = np.sum(~np.isnan(g_lim_array))
     print(f"\nComputed limits for {valid_points} / {len(m_a_eV_array)} mass points")
