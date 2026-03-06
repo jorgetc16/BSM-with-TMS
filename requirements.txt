@@ -1,0 +1,21 @@
+# Core scientific computing
+numpy>=1.21.0
+scipy>=1.7.0
+
+# Plotting
+matplotlib>=3.5.0
+
+# Progress bars
+tqdm>=4.62.0
+
+# For the DarkPhoton analysis (TMS/GRF dependencies)
+# Note: You may need to install these separately or from local paths
+# If grf is a custom package, add installation instructions in comments
+
+# Jupyter support (if needed for notebooks)
+jupyter>=1.0.0
+ipykernel>=6.0.0
+notebook>=6.4.0
+
+# Additional utilities
+pathlib2>=2.3.0; python_version < '3.4'
