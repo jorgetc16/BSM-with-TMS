@@ -51,6 +51,10 @@ def P_gamma_to_alp(
     rho = np.zeros((3, 3), dtype=np.complex128)
     rho[0, 0] = rho[1, 1] = 0.5
 
+    # Convert to radians for gmf.py
+    b_rad = np.radians(b)
+    l_rad = np.radians(l)
+
     N = int(np.ceil(d_max_kpc / domain_size_kpc))
 
     for i in range(N):
@@ -58,11 +62,13 @@ def P_gamma_to_alp(
         if d > d_max_kpc:
             break
 
-        Bb, Bl = B_transverse(d, b, l)
+        # gmf expects radians
+        Bb, Bl = B_transverse(d, b_rad, l_rad)
         B_perp = np.sqrt(Bb**2 + Bl**2)
         if B_perp == 0:
             continue
 
+        # pygedm expects degrees (b, l passed as original degrees)
         n_e = electron_density_at_GeV3(
             d, b, l,
             Galactic_to_Cylindrical,

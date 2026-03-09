@@ -2,6 +2,13 @@
 Compute TMS sensitivity to axion-photon coupling for a range of axion masses.
 """
 
+import os
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import rc
@@ -46,35 +53,32 @@ T_CMB_SI = 2.7255
 eV_to_GeV = 1e-9
 GeV_to_eV = 1e9
 
-def galactic_directions(n_directions=100, avoid_poles=True, max_latitude=20):
+def galactic_directions(n_directions=100, max_latitude=20, max_longitude=20):
     """
-    Generate uniformly distributed directions across the sky.
-    Returns (l, b) in degrees, where l is galactic longitude, b is latitude.
+    Generate uniformly distributed directions around the galactic center.
     
     Parameters:
     -----------
     n_directions : int
         Number of directions to generate
-    avoid_poles : bool
-        If True, restrict to galactic plane region
     max_latitude : float
-        Maximum |b| in degrees (only used if avoid_poles=True)
+        Maximum |b| in degrees (galactic latitude)
+    max_longitude : float
+        Maximum |l| in degrees around galactic center (l=0°)
     """
-    if avoid_poles:
-        # Sample uniformly in galactic plane region where models are most reliable
-        # Uniform in sin(b) for uniform coverage
-        sin_b_max = np.sin(np.radians(max_latitude))
-        sin_b = np.random.uniform(-sin_b_max, sin_b_max, n_directions)
-        b = np.degrees(np.arcsin(sin_b))
-    else:
-        # Uniform over full sky
-        cos_b = np.random.uniform(-1, 1, n_directions)
-        b = np.degrees(np.arcsin(cos_b))
-    
-    l = np.random.uniform(0, 20, n_directions)
+    # Uniform in sin(b) for uniform solid-angle coverage
+    sin_b_max = np.sin(np.radians(max_latitude))
+    sin_b = np.random.uniform(-sin_b_max, sin_b_max, n_directions)
+    b = np.degrees(np.arcsin(sin_b))
+
+    # Longitude centered on galactic center (l=0°)
+    # Wrap correctly: sample [-max_l, +max_l] then convert to [0,360] convention
+    l_centered = np.random.uniform(-max_longitude, max_longitude, n_directions)
+    l = l_centered % 360  # pygedm expects l in [0, 360]
+
     return l, b
 
-def compute_mean_probability(g_agamma, m_a_GeV, nu_GeV, n_directions=100, domain_size_kpc=0.01, ne_model="ne2001"):
+def compute_mean_probability(g_agamma, m_a_GeV, nu_GeV, n_directions=100, domain_size_kpc=0.01, ne_model="expsech", max_latitude=20, max_longitude=20):
     """
     Compute mean conversion probability averaged over multiple sky directions.
     
@@ -91,13 +95,13 @@ def compute_mean_probability(g_agamma, m_a_GeV, nu_GeV, n_directions=100, domain
     domain_size_kpc : float
         Coherence domain size [kpc]
     ne_model : str
-        Electron density model ('ne2001', 'ymw16', etc.)
+        Electron density model ('expsech', 'ymw16', etc.)
     
     Returns:
     --------
     float : Mean conversion probability
     """
-    l_array, b_array = galactic_directions(n_directions)
+    l_array, b_array = galactic_directions(n_directions, max_latitude=20, max_longitude=20)
     probabilities = []
     failed_count = 0
     
@@ -149,7 +153,7 @@ def spectral_distortion(P_conversion, nu_hz):
     return P_conversion
 
 def compute_g_agamma_limit(m_a_eV, tms_freq_ghz, tms_sensitivity_ratio, 
-                           g_base=1e-10, n_directions=50, domain_size_kpc=0.01):
+                           g_base=1e-10, n_directions=50, domain_size_kpc=0.01, ne_model="expsech", max_latitude=20, max_longitude=20):
     """
     Compute the limiting axion-photon coupling for a given axion mass.
     
@@ -169,7 +173,15 @@ def compute_g_agamma_limit(m_a_eV, tms_freq_ghz, tms_sensitivity_ratio,
         Fiducial coupling for initial calculation [GeV^-1]
     n_directions : int
         Number of sky directions to average
-    
+    domain_size_kpc : float
+        Coherence domain size [kpc]
+    ne_model : str
+        Electron density model ('expsech', 'ymw16', etc.)
+    max_latitude : float
+        Maximum latitude for sky direction sampling [degrees]
+    max_longitude : float
+        Maximum longitude for sky direction sampling [degrees]
+
     Returns:
     --------
     float : Limiting g_agamma [GeV^-1]
@@ -188,7 +200,10 @@ def compute_g_agamma_limit(m_a_eV, tms_freq_ghz, tms_sensitivity_ratio,
                 m_a_GeV=m_a_GeV,
                 nu_GeV=nu_GeV,
                 n_directions=n_directions,
-                domain_size_kpc=domain_size_kpc
+                domain_size_kpc=domain_size_kpc,
+                ne_model="expsech",
+                max_latitude=20,
+                max_longitude=20
             )
             P_mean_array.append(P_mean)
         
@@ -233,16 +248,16 @@ def main():
     print(f"TMS sensitivity ratio: {tms_sensitivity_ratio.min():.2e} – {tms_sensitivity_ratio.max():.2e}")
     
     # Axion mass range (eV)
-    m_a_eV_array = np.logspace(-18, -10, 30)  # Reduced for testing
+    m_a_eV_array = np.logspace(-18, -10, 50)  # Reduced for testing
     
     # Fiducial coupling
     g_base = 1e-10  # GeV^-1
     
     # Number of sky directions - focus on galactic plane where models work best
-    n_directions = 2
+    n_directions = 20
     
-    # Try different models - ne2001 is usually most reliable
-    ne_model = "ne2001"  # Can also try "ymw16"
+    # Try different models - expsech is usually most reliable
+    ne_model = "expsech"  # Can also try "ymw16"
     
     print(f"\nUsing electron density model: {ne_model}")
     print(f"Computing sensitivity for {len(m_a_eV_array)} mass points...")
@@ -250,7 +265,7 @@ def main():
     print(f"Restricting to galactic plane (|b| < 20°) for model reliability\n")
     
     # Parallel computation
-    n_cores = 6
+    n_cores = 10
     # n_cores = max(1, cpu_count() - 1)
     print(f"Using {n_cores} CPU cores\n")
     
@@ -259,7 +274,9 @@ def main():
         tms_freq_ghz=tms_freq_ghz,
         tms_sensitivity_ratio=tms_sensitivity_ratio,
         g_base=g_base,
-        n_directions=n_directions
+        n_directions=n_directions,
+        max_latitude=20,    # |b| < 20°
+        max_longitude=20,   # |l| < 20° around GC
     )
     
     with Pool(n_cores) as pool:
@@ -269,7 +286,7 @@ def main():
         )
     
     # Filter out NaN and unphysical values
-    g_lim_array[g_lim_array > 1e-4] = np.nan  # Remove unphysically large couplings
+    g_lim_array[g_lim_array > 1e-2] = np.nan  # Remove unphysically large couplings
     
     valid_points = np.sum(~np.isnan(g_lim_array))
     print(f"\nComputed limits for {valid_points} / {len(m_a_eV_array)} mass points")
@@ -289,46 +306,6 @@ def main():
     )
     print(f"Results saved to {output_file}")
     
-    # Plot
-    plot_sensitivity(m_a_eV_array, g_lim_array)
-
-def plot_sensitivity(m_a_eV_array, g_lim_array):
-    """
-    Plot TMS sensitivity to axion-photon coupling.
-    """
-    fig, ax = plt.subplots(figsize=(10, 7))
-    
-    mask = ~np.isnan(g_lim_array)
-    
-    ax.loglog(m_a_eV_array[mask], g_lim_array[mask], 
-              c='tab:blue', lw=2.5, label='TMS (projection)')
-    ax.fill_between(m_a_eV_array[mask], g_lim_array[mask], 1e-6,
-                    alpha=0.15, color='tab:blue')
-    
-    # Add existing constraints (you can add more here)
-    # Example: CAST constraint
-    # cast_data = np.loadtxt("path/to/CAST_data.txt")
-    # ax.plot(cast_data[:,0], cast_data[:,1], label='CAST', ...)
-    
-    ax.set_xlabel(r"$m_a$ [eV]")
-    ax.set_ylabel(r"$g_{a\gamma}$ [GeV$^{-1}$]")
-    ax.set_title(r"TMS Sensitivity to Axion-Photon Coupling")
-    
-    ax.set_xlim(1e-9, 1e-3)
-    ax.set_ylim(1e-15, 1e-6)
-    
-    ax.legend(fontsize=14, loc='best')
-    ax.grid(True, which='both', alpha=0.3)
-    
-    plt.tight_layout()
-    
-    # Save figure
-    fig_dir = REPO_ROOT / "AxionOscillations" / "Figures"
-    fig_dir.mkdir(exist_ok=True)
-    plt.savefig(fig_dir / "TMS_AxionSensitivity.pdf", bbox_inches='tight')
-    print(f"Figure saved to {fig_dir / 'TMS_AxionSensitivity.pdf'}")
-    
-    plt.show()
 
 if __name__ == "__main__":
     main()
